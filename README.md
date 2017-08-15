@@ -10,7 +10,7 @@ You need to have git and python installed on your local machine.
 
 In the command line (cmd.exe on Windows), run the following command to install bricker (or to update to the lastest version).
 ```
-pip install --upgrade bricker
+python setup.py install
 ```
 
 # Usage

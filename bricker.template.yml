@@ -7,11 +7,10 @@ dbc_folders:
   dev:        /.../
   branches:   /.../
 
-dbc_envfile_path: .../...
 
 github_branches:
   prod: master
-  dev:  dev
+  dev:  develop
 
 api_url: https://<your account>.cloud.databricks.com/api/2.0/
 
