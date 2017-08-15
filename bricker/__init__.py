@@ -17,6 +17,12 @@ def local_repo_active_branch(): return local_repo().active_branch.name
 def settings():
     return yaml.load(file('bricker.yml', 'r'))
 
+def supported_lang():
+    return {
+        ".py": "PYTHON",
+        ".scala": "SCALA"
+    }
+
 def dbc_base():
     if local_repo_active_branch() == settings()['github_branches']['prod']:
         return settings()['dbc_folders']['prod']
@@ -25,10 +31,8 @@ def dbc_base():
     else:
         return settings()['dbc_folders']['branches'] + local_repo_active_branch() + "/"
 
-def dbc_path(path):        return dbc_base() + path
-def local_path(path):      return "./" + path + ".py"
-def path_from_local(path): return path.replace("\\","/").replace(".py","").replace("./","")
-def path_from_dbc(path):   return path.replace(dbc_base(),"")
+def dbc_path(path):        return dbc_base() + path.replace("./", "")
+def path_from_dbc(path):   return path.replace(dbc_base(), "")
 
 def dbc(endpoint, json, ignored_errors=[]):
     api_method = requests.get if endpoint in ['workspace/list','workspace/export','clusters/list-zones','clusters/spark-versions'] else requests.post
@@ -64,34 +68,29 @@ def list_local_notebooks():
     notebooks = []
     for root, dirnames, filenames in os.walk('.'):
             for filename in filenames:
-                if filename.endswith(".py") and not root.startswith("./."):
-                    notebooks.append(path_from_local(os.path.join(root, filename)))
+                if filename.endswith(tuple(supported_lang().keys())) and not root.startswith("./."):
+                    notebooks.append(os.path.join(root, filename).replace("./", ""))
     return notebooks
 
 def compare_repos():
     local_notebooks = set(list_local_notebooks())
     dbc_notebooks = set(list_dbc_notebooks())
 
-    dbc_has_envfile = True if settings()['dbc_envfile_path'] in dbc_notebooks else False
-
-    dbc_notebooks.discard(settings()['dbc_envfile_path'])
-    local_notebooks.discard(settings()['dbc_envfile_path'])
-
     only_dbc = sorted(list(dbc_notebooks - local_notebooks))
     only_local = sorted(list(local_notebooks - dbc_notebooks))
     both = sorted(list(dbc_notebooks & local_notebooks))
 
-    return only_dbc, only_local, both, dbc_has_envfile
+    return only_dbc, only_local, both
 
 def delete_local_notebook(path):
     click.echo("Deleting local notebook " + path)
-    os.unlink(local_path(path))
+    os.unlink(path)
 
 def download_notebook(path):
     click.echo("Downloading notebook " + path)
     content = base64.b64decode( dbc('workspace/export',json={ 'format': 'SOURCE', 'path': dbc_path(path) })["content"] )
 
-    dirpath = os.path.dirname(local_path(path))
+    dirpath = os.path.dirname(path)
     if dirpath != "" and not os.path.exists(dirpath):
         logging.debug("Creating directory path " + dirpath)
         try:
@@ -99,29 +98,20 @@ def download_notebook(path):
         except OSError as exc:
             if exc.errno != errno.EEXIST: raise
 
-    with open(local_path(path), 'wb') as f: f.write(content)
+    with open(path, 'wb') as f: f.write(content)
 
 def delete_dbc_notebook(path):
     click.echo("Deleting DBC notebook " + path)
     dbc('workspace/delete',json={ 'path': dbc_path(path) }, ignored_errors=["RESOURCE_DOES_NOT_EXIST"])
 
 def upload_notebook(path):
-    click.echo("Uploading notebook " + path)
+    click.echo("Uploading notebook {} to {}".format(path, os.path.dirname(dbc_path(path))))
     dbc('workspace/mkdirs', json={ 'path': os.path.dirname(dbc_path(path)) })
 
-    with open(local_path(path), 'r') as f: content = base64.b64encode(f.read())
+    with open(path, 'r') as f: content = base64.b64encode(f.read())
+    filename, file_extension = os.path.splitext(path)
     dbc('workspace/import', json={ 'path':      dbc_path(path)
-                        ,'language':  'PYTHON'
-                        ,'overwrite': True
-                        ,'content':   content
-                        })
-
-def clone_env_file():
-    envfilename = "env_prod" if local_repo_active_branch() == settings()['github_branches']['prod'] else "env_dev"
-    click.echo("Cloning env file from " + envfilename + " since there isnt one already")
-    content = dbc('workspace/export',json={ 'format': 'SOURCE', 'path': settings()['dbc_folders']['envfiles'] + envfilename })["content"]
-    dbc('workspace/import', json={ 'path':      dbc_path("_funksjoner/env")
-                        ,'language':  'PYTHON'
+                        ,'language':  supported_lang()[file_extension]
                         ,'overwrite': True
                         ,'content':   content
                         })
@@ -146,16 +136,15 @@ def cli():
 @cli.command()
 def compare():
     """Only compares which notebooks are where"""
-    only_dbc, only_local, both, dbc_has_envfile = compare_repos()
+    only_dbc, only_local, both = compare_repos()
     print "\nNotebooks both local and in DBC: \n" + "\n".join(both)
     print "\nNotebooks only in DBC: \n" + "\n".join(only_dbc)
     print "\nNotebooks only local:  \n" + "\n".join(only_local)
-    print "\nDBC has envfile: " + ("Yes" if dbc_has_envfile else "No")
 
 @cli.command()
 def down():
     """Syncs DBC notebooks to local"""
-    only_dbc, only_local, both, dbc_has_envfile = compare_repos()
+    only_dbc, only_local, both = compare_repos()
     if len(only_dbc+both) == 0:
         raise click.ClickException("There's no content in DBC for this branch, can't fetch")
     if len(only_local) > 10:
@@ -177,7 +166,7 @@ def down():
 @click.option('--force', is_flag=True)
 def up(force):
     """Syncs local notebooks to DBC"""
-    only_dbc, only_local, both, dbc_has_envfile = compare_repos()
+    only_dbc, only_local, both = compare_repos()
     if len(only_local+both) == 0:
         raise click.ClickException("There's no content locally, can't send to DBC")
 
@@ -193,9 +182,6 @@ def up(force):
     # Uploading with no parallellization due to race condition issues in DBC
     map(upload_notebook, (both + only_local))
     p.map(delete_dbc_notebook, only_dbc)
-
-    if not dbc_has_envfile:
-        clone_env_file()
 
 @cli.command()
 @click.option('--cluster_name', default=None)
