@@ -73,7 +73,9 @@ def list_local_notebooks():
     for root, dirnames, filenames in os.walk('.'):
             for filename in filenames:
                 if filename.endswith(tuple(supported_lang().keys())) and not root.startswith("./."):
-                    notebooks.append(os.path.join(root, filename).replace("./", ""))
+                    notebooks.append(os.path.join(root, filename).replace("./", "").replace("\\", "/"))
+                else:
+                    logging.info("Skipping file {} because it doesn't match supported .py/.scala pattern".format(filename))
     return notebooks
 
 def compare_repos():
