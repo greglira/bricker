@@ -11,11 +11,15 @@ logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', stream=sys.s
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("requests").setLevel(logging.WARNING)
 
-def local_repo(): return git.Repo('.')
-def local_repo_active_branch(): return local_repo().active_branch.name
-
 def settings():
     return yaml.load(file('bricker.yml', 'r'))
+
+
+def local_repo(): return git.Repo(settings()['repo_root'])
+
+
+def local_repo_active_branch(): return local_repo().active_branch.name
+
 
 def supported_lang():
     return {

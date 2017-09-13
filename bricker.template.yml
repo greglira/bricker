@@ -1,6 +1,8 @@
 # WHen setting up bricker for a new Databricks repo,
 # copy this file into your repo and rename it to bricker.yml
 
+repo_root: ../
+
 dbc_folders:
   envfiles:   /.../
   prod:       /.../
