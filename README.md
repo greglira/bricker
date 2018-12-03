@@ -5,8 +5,8 @@ bricker is a utility to sync the local filesystem with DBC. Can only do one way 
 # Prerequisites
 
 You need to have git and python installed on your local machine.
-[] - on
-[x] - off
+ - [] - on
+ - [x] - off
 
 # Setup
 
